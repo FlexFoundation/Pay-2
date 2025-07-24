@@ -1,67 +1,44 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 import datetime
 import json
+import uvicorn
 import os
 
 app = FastAPI()
 
-# Load from environment variables
-BTC_WALLET = os.getenv("BTC_WALLET")
-USDT_WALLET = os.getenv("USDT_WALLET")
-ETH_WALLET = os.getenv("ETH_WALLET")
-XRP_WALLET = os.getenv("XRP_WALLET")
-SOL_WALLET = os.getenv("SOL_WALLET")
-FLW_SECRET_KEY = os.getenv("FLW_SECRET_KEY")
-THANK_YOU_URL = os.getenv("THANK_YOU_URL", "https://thankyou.page")  # default if not set
+# Use the templates folder
+templates = Jinja2Templates(directory="templates")
 
-# Log function
-def log_donation(data):
-    with open("donations_log.json", "a") as f:
-        f.write(json.dumps(data) + "\n")
+# Your Flutterwave public key and encryption key from Render environment
+FLW_PUBLIC_KEY = os.getenv("FLW_PUBLIC_KEY")
+FLW_ENCRYPTION_KEY = os.getenv("FLW_ENCRYPTION_KEY")
 
-# Flutterwave webhook
-class FlutterwaveWebhook(BaseModel):
-    data: dict
+@app.get("/", response_class=HTMLResponse)
+async def payment_page(request: Request):
+    return templates.TemplateResponse("payment.html", {"request": request})
 
-@app.post("/webhook/flutterwave")
-async def flutterwave_webhook(payload: FlutterwaveWebhook):
-    data = payload.data
-    if data.get("status") == "successful":
-        log_donation({
-            "type": "flutterwave",
-            "amount": data.get("amount"),
-            "currency": data.get("currency"),
-            "email": data.get("customer", {}).get("email"),
-            "name": data.get("customer", {}).get("name"),
-            "timestamp": str(datetime.datetime.now())
-        })
-    return {"status": "ok"}
-
-# Crypto form handler
-@app.post("/donate-crypto")
-async def donate_crypto(
-    method: str = Form(...),
-    amount: str = Form(...),
-    sender: str = Form(...)
+@app.post("/process-payment")
+async def process_payment(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(...),
+    amount: float = Form(...)
 ):
-    log_donation({
-        "type": "crypto",
-        "method": method,
+    # Prepare a mock payload for Flutterwave (replace later with actual integration)
+    payment_data = {
+        "status": "pending",
+        "payer_name": name,
+        "payer_email": email,
         "amount": amount,
-        "sender": sender,
-        "timestamp": str(datetime.datetime.now())
-    })
-    return RedirectResponse(url=THANK_YOU_URL, status_code=303)
+        "currency": "USD",
+        "date": datetime.datetime.now().isoformat()
+    }
 
-# Show wallets if needed (GET request)
-@app.get("/wallets")
-async def get_wallets():
-    return {
-        "BTC": BTC_WALLET,
-        "USDT": USDT_WALLET,
-        "ETH": ETH_WALLET,
-        "XRP": XRP_WALLET,
-        "SOL": SOL_WALLET
-}
+    # Log to JSON file (optional)
+    with open("payments.json", "a") as f:
+        f.write(json.dumps(payment_data) + "\n")
+
+    return RedirectResponse(url="/", status_code=303)
